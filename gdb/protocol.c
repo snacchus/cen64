@@ -27,7 +27,7 @@
 #endif
 
 #define GDB_GLOBAL_THREAD_ID   1
-#define GDB_RSP_THEAD_ID      2
+#define GDB_RSP_THREAD_ID      2
 
 #define GDB_GET_EXC_CODE(cause) (((cause) >> 2) & 0x1f)
 #define GDB_TRANSLATE_PC(pc)    ((uint64_t)(pc) | 0xFFFFFFFF00000000ULL)
@@ -202,7 +202,7 @@ void gdb_handle_query(struct gdb* gdb, const char* command_start, const char *co
   } else if (GDB_STR_STARTS_WITH(command_start, "qTStatus")) {
     gdb_send_literal(gdb, "$#00");
   } else if (GDB_STR_STARTS_WITH(command_start, "qfThreadInfo")) {
-    sprintf(gdb->output_buffer, "$m%x#", GDB_GLOBAL_THREAD_ID);
+    sprintf(gdb->output_buffer, "$m%x,%x#", GDB_GLOBAL_THREAD_ID, GDB_RSP_THREAD_ID);
     gdb_send(gdb);
   } else if (GDB_STR_STARTS_WITH(command_start, "qsThreadInfo")) {
     strcpy(gdb->output_buffer, "$l#");
@@ -211,7 +211,7 @@ void gdb_handle_query(struct gdb* gdb, const char* command_start, const char *co
     strcpy(gdb->output_buffer, "$0#");
     gdb_send(gdb);
   } else if (GDB_STR_STARTS_WITH(command_start, "qC")) {
-    sprintf(gdb->output_buffer, "$QC%x#", GDB_GLOBAL_THREAD_ID);
+    sprintf(gdb->output_buffer, "$QC%x#", (gdb->flags & GDB_FLAGS_RSP_SELECTED) ? GDB_RSP_THREAD_ID : GDB_GLOBAL_THREAD_ID);
     gdb_send(gdb);
   } else if (GDB_STR_STARTS_WITH(command_start, "qTfV")) {
     gdb_send_literal(gdb, "$#00");
@@ -223,7 +223,17 @@ void gdb_handle_query(struct gdb* gdb, const char* command_start, const char *co
   } else if (GDB_STR_STARTS_WITH(command_start, "qSymbol")) {
     gdb_send_literal(gdb, "$OK#9a");
   } else if (GDB_STR_STARTS_WITH(command_start, "qThreadExtraInfo")) {
-    strcpy(gdb->output_buffer, "$746872656164#");
+    uint32_t tid = gdb_parse_hex(&command_start[17], 1);
+    if (tid == GDB_GLOBAL_THREAD_ID) {
+      // Returns "VR4300"
+      strcpy(gdb->output_buffer, "$565234333030#");
+    } else if (tid == GDB_RSP_THREAD_ID) {
+      // Returns "RSP"
+      strcpy(gdb->output_buffer, "$525350#");
+    } else {
+      // Returns "Unknown"
+      strcpy(gdb->output_buffer, "$556e6b6e6f776e#");
+    }
     gdb_send(gdb);
   } else {
     gdb_send_literal(gdb, "$#00");
@@ -385,8 +395,22 @@ void gdb_handle_packet(struct gdb* gdb, const char* command_start, const char* c
       gdb_handle_v(gdb, command_start, command_end);
       break;
     case 'H':
-      gdb_send_literal(gdb, "$OK#9a");
+    {
+      if (command_start[1] == 'g') {
+        uint32_t tid = gdb_parse_hex(&command_start[2], 1);
+        if (tid == GDB_GLOBAL_THREAD_ID) {
+          gdb->flags &= ~GDB_FLAGS_RSP_SELECTED;
+        } else if (tid == GDB_RSP_THREAD_ID) {
+          gdb->flags |= GDB_FLAGS_RSP_SELECTED;
+        } else {
+          return gdb_send_literal(gdb, "$#00");
+        }
+        gdb_send_literal(gdb, "$OK#9a");
+      } else {
+        gdb_send_literal(gdb, "$#00");
+      }
       break;
+    }
     case '!':
       gdb_send_literal(gdb, "$#00");
       break;
@@ -421,6 +445,10 @@ void gdb_handle_packet(struct gdb* gdb, const char* command_start, const char* c
       }
       break;
     }
+    case 'T':
+    {
+      return gdb_send_literal(gdb, "$OK#9a");
+    }
     default:
       gdb_send_literal(gdb, "$#00");
   }
@@ -444,9 +472,9 @@ cen64_cold void gdb_send_stop_reply(struct gdb* gdb, bool is_breakpoint, enum de
 
   current += sprintf(current, "$T%02x", gdb_signals[exc_code]);
   if (is_breakpoint) {
-    current += sprintf(current, "swbreak:");
+    current += sprintf(current, "swbreak:;");
   }
-  current += sprintf(current, "thread:%d;", GDB_GLOBAL_THREAD_ID);
+  current += sprintf(current, "thread:%d;", (gdb->flags & GDB_FLAGS_RSP_SELECTED) ? GDB_RSP_THREAD_ID : GDB_GLOBAL_THREAD_ID);
   *current++ = '#';
   *current++ = '\0';
 
