@@ -92,7 +92,12 @@ static void pi_rom_fetch(struct pi_controller *pi, uint32_t source, int32_t leng
   int l = length;
   if (source + length > pi->rom_size)
     l = pi->rom_size - source;
-  memcpy(dest, pi->rom + source, l);
+
+  if (source >= pi->rom_size) {
+    l = 0;
+  } else {
+    memcpy(dest, pi->rom + source, l);
+  }
 
   // FIXME: verify this on real hardware
   memset(dest+l, 0xFF, length - l);

@@ -101,9 +101,9 @@ void rsp_status_write(struct rsp *rsp, uint32_t rt) {
 
     if ((rt & SP_CLR_HALT) && (status & SP_STATUS_HALT)) {
       // Save PC around pipeline init
-      uint32_t pc = rsp->pipeline.rdex_latch.common.pc;
-      rsp_pipeline_init(&rsp->pipeline);
-      rsp->pipeline.ifrd_latch.pc = pc;
+      // uint32_t pc = rsp->pipeline.rdex_latch.common.pc;
+      // rsp_pipeline_init(&rsp->pipeline);
+      // rsp->pipeline.ifrd_latch.pc = pc;
 
       status &= ~SP_STATUS_HALT;
     }
